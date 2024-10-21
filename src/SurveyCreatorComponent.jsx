@@ -2,7 +2,7 @@ import React from "react";
 import { SurveyCreator, SurveyCreatorComponent } from "survey-creator-react";
 import "survey-core/survey.i18n.js";
 import "survey-creator-core/survey-creator-core.i18n.js";
-import { Serializer } from "survey-core";
+import { Serializer, QuestionFactory, Question } from "survey-core";
 import "survey-core/defaultV2.css";
 import "survey-creator-core/survey-creator-core.css";
 
@@ -58,6 +58,64 @@ Serializer.addProperty("text", {
   category: "general",
   visibleIndex: 7
 });
+
+// Define the new GeoLocation question type
+Serializer.addClass(
+  "geolocation",
+  [
+    { name: "region", category: "Geo Location", choices: ["Africa", "Americas", "Asia", "Europe", "Oceania"] },
+    { 
+      name: "country", 
+      category: "Geo Location",
+      dependsOn: ["region"],
+      choices: function (obj, choicesCallback) {
+        if (!choicesCallback) return;
+        const xhr = new XMLHttpRequest();
+        const url = !!obj && !!obj.region
+          ? "https://surveyjs.io/api/CountriesExample?region=" + obj.region
+          : "https://surveyjs.io/api/CountriesExample";
+        xhr.open("GET", url);
+        xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+        xhr.onload = function () {
+          if (xhr.status === 200) {
+            const response = JSON.parse(xhr.response);
+            const result = [];
+            result.push({ value: null });
+            for (let i = 0; i < response.length; i++) {
+              const item = response[i];
+              const val = item.cioc;
+              result.push({ value: val, text: item.name });
+            }
+            choicesCallback(result);
+          }
+        };
+        xhr.send();
+      }
+    }
+  ],
+  function () {
+    return new GeoLocationQuestion(this.name);
+  },
+  "question"
+);
+
+// Define the GeoLocationQuestion class
+class GeoLocationQuestion extends Question {
+  constructor(name) {
+    super(name);
+    this.region = null;
+    this.country = null;
+  }
+  getType() {
+    return "geolocation";
+  }
+}
+
+// Register the new question type
+QuestionFactory.Instance.registerQuestion("geolocation", (name) => {
+  return new GeoLocationQuestion(name);
+});
+
 function SurveyCreatorRenderComponent() {
     const options = {
         showLogicTab: true
@@ -70,13 +128,20 @@ function SurveyCreatorRenderComponent() {
        "name": "page1",
        "elements": [
         {
-         "type": "text",
-         "name": "question1"
+         "type": "geolocation",
+         "name": "geoQuestion"
         }
        ]
       }
      ]
-    }
+    };
+    creator.onDesignerSurveyCreated.add(function(_, options) {
+      options.survey.onPropertyChanged.add(function(_, options) {
+        if (options.name === "region") {
+          options.question.country = null;
+        }
+      });
+    });
     creator.collapseAllPropertyGridCategories();
     creator.expandPropertyGridCategory("Geo Location");
     creator.showSidebar = true;
